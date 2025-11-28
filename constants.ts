@@ -7,6 +7,7 @@ export const API_MALLING_ENDPOINT = '/subir-malling';
 export const API_MAILING_STATS_ENDPOINT = '/estatisticas-mailings';
 export const API_MAILINGS_LIST_ENDPOINT = '/mailings';
 export const API_COMPATIBLE_CEPS_ENDPOINT = '/mailings-ceps-compativel';
+export const API_LISTS_ENDPOINT = '/listas';
 
 // Toggle this to false to use your real local backend. 
 // Set to true to see the UI with generated mock data immediately.

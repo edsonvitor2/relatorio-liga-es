@@ -1,7 +1,5 @@
-
-
-import { ApiResponse, FilterState, MailingItem, MailingResponse, MailingStatsResponse, MailingListResponse, CompatibleCepsResponse } from '../types';
-import { API_BASE_URL, API_ENDPOINT, API_MALLING_ENDPOINT, API_MAILING_STATS_ENDPOINT, API_MAILINGS_LIST_ENDPOINT, API_COMPATIBLE_CEPS_ENDPOINT, USE_MOCK_DATA } from '../constants';
+import { ApiResponse, FilterState, MailingItem, MailingResponse, MailingStatsResponse, MailingListResponse, CompatibleCepsResponse, ListStatsResponse } from '../types';
+import { API_BASE_URL, API_ENDPOINT, API_MALLING_ENDPOINT, API_MAILING_STATS_ENDPOINT, API_MAILINGS_LIST_ENDPOINT, API_COMPATIBLE_CEPS_ENDPOINT, API_LISTS_ENDPOINT, USE_MOCK_DATA } from '../constants';
 import { generateMockData } from './mockService';
 
 export const fetchRecordings = async (filters: FilterState): Promise<ApiResponse> => {
@@ -183,6 +181,45 @@ export const fetchCompatibleData = async (mailings: string[], page: number = 1, 
         return await response.json();
     } catch (error) {
         console.error('Falha ao buscar dados compatíveis:', error);
+        throw error;
+    }
+};
+
+export const fetchListsStats = async (filters: FilterState): Promise<ListStatsResponse> => {
+    if (USE_MOCK_DATA) {
+        return {
+            success: true,
+            data: [],
+            pagination: {},
+            filters: {}
+        };
+    }
+
+    const queryParams = new URLSearchParams();
+    
+    // Envia datas com horário específico para garantir filtro correto de dia inteiro
+    if (filters.start_date) {
+        queryParams.append('start_date', `${filters.start_date} 00:00:01`);
+        queryParams.append('data_inicio', `${filters.start_date} 00:00:01`);
+    }
+    if (filters.end_date) {
+        queryParams.append('end_date', `${filters.end_date} 23:59:59`);
+        queryParams.append('data_fim', `${filters.end_date} 23:59:59`);
+    }
+    
+    if (filters.lista_nome) queryParams.append('lista_nome', filters.lista_nome);
+    queryParams.append('limit', '50'); // Pegar top 50 listas para o gráfico
+
+    const url = `${API_BASE_URL}${API_LISTS_ENDPOINT}?${queryParams.toString()}`;
+
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`API Error: ${response.statusText}`);
+        }
+        return await response.json();
+    } catch (error) {
+        console.error('Falha ao buscar estatísticas de listas:', error);
         throw error;
     }
 };

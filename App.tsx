@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
-import { ApiResponse, FilterState, Recording, PaginationMeta, MailingGeneralStats, MailingStat } from './types';
-import { fetchRecordings, fetchMailingStats } from './services/api';
+import { ApiResponse, FilterState, Recording, PaginationMeta, MailingGeneralStats, MailingStat, ListStatData } from './types';
+import { fetchRecordings, fetchMailingStats, fetchListsStats } from './services/api';
 import Filters from './components/Filters';
 import RecordingsTable from './components/RecordingsTable';
 import MailingStatsTable from './components/MailingStatsTable';
@@ -9,7 +8,7 @@ import StatsCard from './components/StatsCard';
 import Charts from './components/Charts';
 import MailingUpload from './components/MailingUpload';
 import MailingComparison from './components/MailingComparison';
-import { Phone, Clock, Percent, Activity, BarChart3, LayoutDashboard, Database, Users, Copy, FileText, PieChart as PieChartIcon, Upload, GitCompare } from 'lucide-react';
+import { Phone, Clock, Percent, Activity, BarChart3, LayoutDashboard, Database, Users, Copy, FileText, PieChart as PieChartIcon, Upload, GitCompare, PhoneOutgoing } from 'lucide-react';
 import { DEFAULT_PAGE_SIZE } from './constants';
 
 // Helper para converter "HH:MM:SS" em segundos totais
@@ -45,6 +44,7 @@ function App() {
   const [tableData, setTableData] = useState<Recording[]>([]);
   const [callStats, setCallStats] = useState({ total: 0, avgDuration: '0s', successRate: 0 });
   const [currentPage, setCurrentPage] = useState(1);
+  const [listsData, setListsData] = useState<ListStatData[]>([]);
   
   // -- ESTADOS DE MAILING --
   const [mailingGeneralStats, setMailingGeneralStats] = useState<MailingGeneralStats | null>(null);
@@ -70,14 +70,27 @@ function App() {
     try {
         // Busca até 5000 registros para ter gráficos completos
         const apiFiltersCalls = { ...filters, page: 1, limit: 5000 };
-        const response = await fetchRecordings(apiFiltersCalls);
         
-        const fetchedRecordings = response.dados || [];
+        // Executa requests em paralelo (Gravações + Estatísticas de Listas)
+        const [recordingsResponse, listsResponse] = await Promise.all([
+            fetchRecordings(apiFiltersCalls),
+            fetchListsStats(apiFiltersCalls)
+        ]);
+        
+        // Processar Gravações
+        const fetchedRecordings = recordingsResponse.dados || [];
         setAllData(fetchedRecordings);
         setCurrentPage(1);
 
+        // Processar Listas
+        if (listsResponse.success && Array.isArray(listsResponse.data)) {
+            setListsData(listsResponse.data);
+        } else {
+            setListsData([]);
+        }
+
         // Cálculos de Estatísticas no Frontend
-        const total = response.totalRegistros || fetchedRecordings.length;
+        const total = recordingsResponse.totalRegistros || fetchedRecordings.length;
         const validCalls = fetchedRecordings.filter(d => d.disposition === 'ANSWERED').length;
         const totalDurationSeconds = fetchedRecordings.reduce((acc, curr) => acc + timeStringToSeconds(curr.duration), 0);
         const avgDurSeconds = fetchedRecordings.length > 0 ? Math.floor(totalDurationSeconds / fetchedRecordings.length) : 0;
@@ -92,6 +105,7 @@ function App() {
     } catch (error) {
         console.error("Erro ao carregar ligações:", error);
         setAllData([]);
+        setListsData([]);
         setCallStats({ total: 0, avgDuration: '0s', successRate: 0 });
     } finally {
         setLoading(false);
@@ -153,6 +167,10 @@ function App() {
       temProximaPagina: currentPage < totalPages,
       temPaginaAnterior: currentPage > 1
   };
+
+  // Calculate Aggregates for Lists
+  const totalListasQty = listsData.reduce((acc, item) => acc + item.lista_quantidade, 0);
+  const totalDiscadoQty = listsData.reduce((acc, item) => acc + item.total_discado, 0);
 
   return (
     <div className="min-h-screen bg-slate-50 flex font-sans">
@@ -257,7 +275,7 @@ function App() {
                     <Activity className="w-5 h-5 text-primary-600" /> KPIs de Atendimento
                 </h3>
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
                     <StatsCard 
                         title="Total Filtrado" 
                         value={callStats.total.toLocaleString()} 
@@ -278,6 +296,18 @@ function App() {
                         color="orange" 
                     />
                     <StatsCard 
+                        title="Total em Listas" 
+                        value={totalListasQty.toLocaleString()} 
+                        icon={Database} 
+                        color="blue" 
+                    />
+                    <StatsCard 
+                        title="Total Discado" 
+                        value={totalDiscadoQty.toLocaleString()} 
+                        icon={PhoneOutgoing} 
+                        color="green" 
+                    />
+                    <StatsCard 
                         title="Total na Tela" 
                         value={tableData.length} 
                         icon={Phone} 
@@ -286,8 +316,8 @@ function App() {
                 </div>
 
                 {/* Gráficos Exclusivos de Ligações */}
-                {!loading && allData.length > 0 && (
-                    <Charts data={allData} />
+                {!loading && (
+                    <Charts data={allData} listsData={listsData} />
                 )}
 
                 {/* Tabela de Gravações */}

@@ -1,5 +1,6 @@
 
 
+
 export interface Recording {
   id: number;
   calldate: string;
@@ -142,4 +143,23 @@ export interface CompatibleCepsResponse {
     totalPages: number;
     dados: CompatibleData[];
     error?: string;
+}
+
+// Tipos para Estatísticas de Listas (Dash de Ligações)
+export interface ListStatData {
+    lista_id: string;
+    lista_nome: string;
+    lista_data: string;
+    lista_quantidade: number;
+    total_discado: number;
+    total_atendido: number;
+    emp_nome: string;
+    usr_nome: string;
+}
+
+export interface ListStatsResponse {
+    success: boolean;
+    data: ListStatData[];
+    pagination: any;
+    filters: any;
 }

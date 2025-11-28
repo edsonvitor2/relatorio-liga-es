@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect } from 'react';
 import { fetchMailingsList, fetchCompatibleData } from '../services/api';
 import { Search, Calendar, Database, Loader2, CheckSquare, Square, FileSpreadsheet, Download } from 'lucide-react';
@@ -104,10 +103,31 @@ const MailingComparison: React.FC = () => {
                 return;
             }
 
-            setExportStatus(`Gerando Excel com ${allData.length} registros...`);
+            setExportStatus(`Formatando ${allData.length} registros...`);
+
+            // --- MAPEAMENTO DE COLUNAS PERSONALIZADO ---
+            const excelData = allData.map(row => ({
+                "TELEFONE": row.telefone1 || "",
+                "NOME": row.nome || "",
+                "DATA_NASCIMENTO": "", // Campo vazio conforme solicitado
+                "COD_CLI": "",        // Campo vazio conforme solicitado
+                "CPF": row.cpf || "",
+                "EXTRA_1": "",
+                "EXTRA_2": "",
+                "EXTRA_3": row.nome_malling || "", // Nome do Mailing aqui
+                "EXTRA_DATA": "",
+                "CEP": row.cep || "",
+                "BAIRRO": row.bairro || "",
+                "LOGRADOUR": row.endereco || "",
+                "COMPLEMENTO": row.numero || "", // Colocando número no complemento
+                "CIDADE": row.cidade || "",
+                "UF": row.uf || ""
+            }));
+
+            setExportStatus(`Gerando Excel...`);
             
             // Gerar Excel
-            const ws = XLSX.utils.json_to_sheet(allData);
+            const ws = XLSX.utils.json_to_sheet(excelData);
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "Compatíveis");
             

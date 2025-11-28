@@ -1,9 +1,16 @@
+
 import { Recording, ApiResponse, FilterState } from '../types';
 
 // Helper to generate random dates
 const randomDate = (start: Date, end: Date) => {
   return new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime()));
 };
+
+const formatTimeMock = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `00:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
 
 // Mock Data Generator
 export const generateMockData = (filters: FilterState): Promise<ApiResponse> => {
@@ -15,14 +22,16 @@ export const generateMockData = (filters: FilterState): Promise<ApiResponse> => 
       
       let allData: Recording[] = Array.from({ length: count }).map((_, i) => {
         const date = randomDate(new Date(2023, 0, 1), new Date());
-        const duration = Math.floor(Math.random() * 300);
+        const durationSec = Math.floor(Math.random() * 300);
+        const billsecSec = Math.max(0, durationSec - 10);
+        
         return {
           id: i + 1,
           calldate: date.toISOString(),
           src: `100${Math.floor(Math.random() * 10)}`,
           dst: `119${Math.floor(Math.random() * 90000000 + 10000000)}`,
-          duration: duration,
-          billsec: Math.max(0, duration - 10),
+          duration: formatTimeMock(durationSec),
+          billsec: formatTimeMock(billsecSec),
           disposition: dispositions[Math.floor(Math.random() * dispositions.length)],
           gravacao: Math.random() > 0.5 ? 'path/to/file.wav' : null,
           destino: 'SIP/Trunk',
@@ -63,7 +72,7 @@ export const generateMockData = (filters: FilterState): Promise<ApiResponse> => 
       // Sorting
       allData.sort((a, b) => new Date(b.calldate).getTime() - new Date(a.calldate).getTime());
 
-      // Pagination
+      // Pagination Mocking (Ignoring for 'limit=5000' logic in App but mock service follows request)
       const total = allData.length;
       const startIndex = (filters.page - 1) * filters.limit;
       const endIndex = startIndex + filters.limit;

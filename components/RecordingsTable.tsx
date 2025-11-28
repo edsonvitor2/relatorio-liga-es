@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Recording, PaginationMeta } from '../types';
 import { Clock, User, PhoneOutgoing } from 'lucide-react';
@@ -8,12 +9,6 @@ interface RecordingsTableProps {
   onPageChange: (newPage: number) => void;
   isLoading: boolean;
 }
-
-const formatDuration = (seconds: number) => {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-};
 
 const getDispositionBadge = (status: string) => {
   switch (status) {
@@ -99,10 +94,10 @@ const RecordingsTable: React.FC<RecordingsTableProps> = ({ data, pagination, onP
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center text-sm text-slate-600">
                     <Clock className="w-4 h-4 mr-1.5 text-slate-400" />
-                    {formatDuration(row.duration)}
+                    {row.duration}
                   </div>
                   <div className="text-xs text-slate-400 mt-0.5">
-                    Falado: {formatDuration(row.billsec)}
+                    Falado: {row.billsec}
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">

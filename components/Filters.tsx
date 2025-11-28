@@ -1,18 +1,26 @@
+
 import React from 'react';
 import { FilterState, DispositionType } from '../types';
-import { Filter, Calendar, List, Phone, X, Search } from 'lucide-react';
+import { Filter, Calendar, List, Phone, X, Search, Hash } from 'lucide-react';
 
 interface FiltersProps {
   filters: FilterState;
   setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
   onApply: () => void;
   isLoading: boolean;
+  pageSize: number;
+  setPageSize: React.Dispatch<React.SetStateAction<number>>;
+  currentView: 'calls' | 'mailing' | 'upload';
 }
 
-const Filters: React.FC<FiltersProps> = ({ filters, setFilters, onApply, isLoading }) => {
+const Filters: React.FC<FiltersProps> = ({ filters, setFilters, onApply, isLoading, pageSize, setPageSize, currentView }) => {
   const handleChange = (key: keyof FilterState, value: any) => {
     setFilters(prev => ({ ...prev, [key]: value, page: 1 })); // Reset to page 1 on filter change
   };
+
+  // Se estiver na tela de upload, não mostra filtros (ou poderia mostrar apenas relevantes, mas geralmente upload não tem filtro)
+  // Mas o layout pede sidebar fixa, então vamos manter, talvez desabilitado ou apenas visivel.
+  // Vamos assumir que os filtros são úteis para os dashboards.
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 h-full flex flex-col">
@@ -69,7 +77,7 @@ const Filters: React.FC<FiltersProps> = ({ filters, setFilters, onApply, isLoadi
         {/* List Name - Disabled if Sem Lista is checked */}
         <div className={`space-y-2 transition-opacity ${filters.sem_lista ? 'opacity-50 pointer-events-none' : ''}`}>
           <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
-            <List className="w-4 h-4 text-slate-400" /> Nome da Lista
+            <List className="w-4 h-4 text-slate-400" /> Nome da Lista / Base
           </label>
           <input
             type="text"
@@ -81,21 +89,41 @@ const Filters: React.FC<FiltersProps> = ({ filters, setFilters, onApply, isLoadi
           />
         </div>
 
-        {/* Disposition */}
+        {/* Disposition - SÓ MOSTRA SE FOR ABA DE LIGAÇÕES */}
+        {currentView === 'calls' && (
+            <div className="space-y-2 animate-in fade-in slide-in-from-top-2">
+            <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                <Phone className="w-4 h-4 text-slate-400" /> Status da Chamada
+            </label>
+            <select
+                className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none bg-white"
+                value={filters.disposition}
+                onChange={(e) => handleChange('disposition', e.target.value)}
+            >
+                <option value={DispositionType.ALL}>Todos os Status</option>
+                <option value={DispositionType.ANSWERED}>Atendidas (ANSWERED)</option>
+                <option value={DispositionType.NO_ANSWER}>Não Atendidas (NO ANSWER)</option>
+                <option value={DispositionType.BUSY}>Ocupado (BUSY)</option>
+                <option value={DispositionType.FAILED}>Falha (FAILED)</option>
+            </select>
+            </div>
+        )}
+
+        {/* Page Size */}
         <div className="space-y-2">
           <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
-            <Phone className="w-4 h-4 text-slate-400" /> Status da Chamada
+            <Hash className="w-4 h-4 text-slate-400" /> Itens por página
           </label>
           <select
             className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none bg-white"
-            value={filters.disposition}
-            onChange={(e) => handleChange('disposition', e.target.value)}
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value))}
           >
-            <option value={DispositionType.ALL}>Todos os Status</option>
-            <option value={DispositionType.ANSWERED}>Atendidas (ANSWERED)</option>
-            <option value={DispositionType.NO_ANSWER}>Não Atendidas (NO ANSWER)</option>
-            <option value={DispositionType.BUSY}>Ocupado (BUSY)</option>
-            <option value={DispositionType.FAILED}>Falha (FAILED)</option>
+            <option value={15}>15 itens</option>
+            <option value={50}>50 itens</option>
+            <option value={100}>100 itens</option>
+            <option value={500}>500 itens</option>
+            <option value={1000}>1000 itens</option>
           </select>
         </div>
       </div>

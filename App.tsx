@@ -1,160 +1,376 @@
-import React, { useState, useEffect } from 'react';
-import { ApiResponse, FilterState, Recording, PaginationMeta } from './types';
-import { fetchRecordings } from './services/api';
+
+import React, { useState, useEffect, useCallback } from 'react';
+import { ApiResponse, FilterState, Recording, PaginationMeta, MailingGeneralStats, MailingStat } from './types';
+import { fetchRecordings, fetchMailingStats } from './services/api';
 import Filters from './components/Filters';
 import RecordingsTable from './components/RecordingsTable';
+import MailingStatsTable from './components/MailingStatsTable';
 import StatsCard from './components/StatsCard';
 import Charts from './components/Charts';
-import { Phone, Clock, Percent, Activity, BarChart3, LayoutDashboard } from 'lucide-react';
+import MailingUpload from './components/MailingUpload';
+import MailingComparison from './components/MailingComparison';
+import { Phone, Clock, Percent, Activity, BarChart3, LayoutDashboard, Database, Users, Copy, FileText, PieChart as PieChartIcon, Upload, GitCompare } from 'lucide-react';
 import { DEFAULT_PAGE_SIZE } from './constants';
 
+// Helper para converter "HH:MM:SS" em segundos totais
+const timeStringToSeconds = (timeStr: string): number => {
+  if (!timeStr) return 0;
+  const parts = timeStr.split(':').map(Number);
+  // Formato HH:MM:SS
+  if (parts.length === 3) {
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  }
+  // Fallback formato MM:SS
+  if (parts.length === 2) {
+    return parts[0] * 60 + parts[1];
+  }
+  return 0;
+};
+
+// Helper para formatar segundos de volta para texto (para exibir médias)
+const secondsToTime = (totalSeconds: number): string => {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}m ${seconds}s`;
+}
+
+// DEFINIÇÃO DAS 4 VISÕES PRINCIPAIS
+type ViewState = 'calls' | 'mailing' | 'upload' | 'comparison';
+
 function App() {
-  const [data, setData] = useState<Recording[]>([]);
-  const [stats, setStats] = useState({ total: 0, avgDuration: 0, successRate: 0 });
-  const [pagination, setPagination] = useState<PaginationMeta | undefined>(undefined);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [currentView, setCurrentView] = useState<ViewState>('calls');
+  
+  // -- ESTADOS DE GRAVAÇÕES (CALLS) --
+  const [allData, setAllData] = useState<Recording[]>([]);
+  const [tableData, setTableData] = useState<Recording[]>([]);
+  const [callStats, setCallStats] = useState({ total: 0, avgDuration: '0s', successRate: 0 });
+  const [currentPage, setCurrentPage] = useState(1);
+  
+  // -- ESTADOS DE MAILING --
+  const [mailingGeneralStats, setMailingGeneralStats] = useState<MailingGeneralStats | null>(null);
+  const [mailingList, setMailingList] = useState<MailingStat[]>([]);
+
+  // -- ESTADOS COMPARTILHADOS --
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [loading, setLoading] = useState<boolean>(false);
+  
   const [filters, setFilters] = useState<FilterState>({
     start_date: '',
     end_date: '',
     lista_nome: '',
     disposition: '',
     sem_lista: false,
-    page: 1,
-    limit: DEFAULT_PAGE_SIZE
+    page: 1, 
+    limit: pageSize
   });
 
-  const loadData = async () => {
+  // --- FUNÇÃO PARA CARREGAR DADOS DE LIGAÇÕES ---
+  const loadCallData = useCallback(async () => {
     setLoading(true);
     try {
-      const response: ApiResponse = await fetchRecordings(filters);
-      setData(response.dados);
-      
-      // Update pagination info
-      if (response.paginacao) {
-        setPagination(response.paginacao);
-      }
+        // Busca até 5000 registros para ter gráficos completos
+        const apiFiltersCalls = { ...filters, page: 1, limit: 5000 };
+        const response = await fetchRecordings(apiFiltersCalls);
+        
+        const fetchedRecordings = response.dados || [];
+        setAllData(fetchedRecordings);
+        setCurrentPage(1);
 
-      // Calculate simple client-side stats based on current view 
-      // (In a real app, these might come from a separate 'stats' endpoint for accuracy over total dataset)
-      const total = response.totalRegistros;
-      
-      // These stats are calculated on the page data for demo purposes, 
-      // ideally the backend returns aggregate stats
-      const validCalls = response.dados.filter(d => d.disposition === 'ANSWERED').length;
-      const totalDuration = response.dados.reduce((acc, curr) => acc + curr.duration, 0);
-      const avgDur = response.dados.length > 0 ? Math.floor(totalDuration / response.dados.length) : 0;
-      const rate = response.dados.length > 0 ? Math.floor((validCalls / response.dados.length) * 100) : 0;
+        // Cálculos de Estatísticas no Frontend
+        const total = response.totalRegistros || fetchedRecordings.length;
+        const validCalls = fetchedRecordings.filter(d => d.disposition === 'ANSWERED').length;
+        const totalDurationSeconds = fetchedRecordings.reduce((acc, curr) => acc + timeStringToSeconds(curr.duration), 0);
+        const avgDurSeconds = fetchedRecordings.length > 0 ? Math.floor(totalDurationSeconds / fetchedRecordings.length) : 0;
+        const rate = fetchedRecordings.length > 0 ? Math.floor((validCalls / fetchedRecordings.length) * 100) : 0;
 
-      setStats({
-        total: total,
-        avgDuration: avgDur,
-        successRate: rate
-      });
+        setCallStats({
+            total: total,
+            avgDuration: secondsToTime(avgDurSeconds),
+            successRate: rate
+        });
 
     } catch (error) {
-      console.error("Error loading data", error);
+        console.error("Erro ao carregar ligações:", error);
+        setAllData([]);
+        setCallStats({ total: 0, avgDuration: '0s', successRate: 0 });
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
-  };
+  }, [filters]);
 
-  // Initial load and whenever filters change effectively
+  // --- FUNÇÃO PARA CARREGAR DADOS DE MAILING ---
+  const loadMailingData = useCallback(async () => {
+    setLoading(true);
+    try {
+        const response = await fetchMailingStats(filters);
+        setMailingGeneralStats(response.totaisGerais);
+        setMailingList(response.estatisticas);
+    } catch (error) {
+        console.error("Erro ao carregar estatísticas de mailing:", error);
+        setMailingGeneralStats(null);
+        setMailingList([]);
+    } finally {
+        setLoading(false);
+    }
+  }, [filters]);
+
+  // --- EFEITO PRINCIPAL DE CARREGAMENTO ---
   useEffect(() => {
-    loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.page]); // Only auto-reload on page change. Filters require manual "Apply" button.
+    if (currentView === 'calls') {
+        loadCallData();
+    } else if (currentView === 'mailing') {
+        loadMailingData();
+    }
+    // 'upload' e 'comparison' não carregam dados globais neste hook
+  }, [currentView, loadCallData, loadMailingData]); 
+
+  // --- PAGINAÇÃO CLIENT-SIDE PARA TABELA DE LIGAÇÕES ---
+  useEffect(() => {
+    if (currentView === 'calls') {
+        const startIndex = (currentPage - 1) * pageSize;
+        const endIndex = startIndex + pageSize;
+        setTableData(allData.slice(startIndex, endIndex));
+    }
+  }, [currentPage, allData, pageSize, currentView]);
+
 
   const handleApplyFilters = () => {
-    loadData();
+    if (currentView === 'calls') loadCallData();
+    if (currentView === 'mailing') loadMailingData();
   };
 
   const handlePageChange = (newPage: number) => {
-    setFilters(prev => ({ ...prev, page: newPage }));
+    setCurrentPage(newPage);
+    document.getElementById('recordings-table')?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  // Meta dados para paginação
+  const totalPages = Math.ceil(allData.length / pageSize);
+  const paginationMeta: PaginationMeta = {
+      paginaAtual: currentPage,
+      porPagina: pageSize,
+      totalPages: totalPages,
+      temProximaPagina: currentPage < totalPages,
+      temPaginaAnterior: currentPage > 1
   };
 
   return (
     <div className="min-h-screen bg-slate-50 flex font-sans">
       
-      {/* Sidebar / Filter Panel */}
-      <aside className="w-80 p-4 fixed h-screen overflow-hidden hidden lg:block z-10">
-        <div className="h-full flex flex-col">
-          <div className="flex items-center gap-3 px-2 mb-6 text-slate-900">
-             <div className="bg-primary-600 text-white p-2 rounded-lg">
-                <LayoutDashboard size={24} />
-             </div>
-             <h1 className="text-xl font-bold tracking-tight">CallMetrics</h1>
-          </div>
-          <Filters 
-            filters={filters} 
-            setFilters={setFilters} 
-            onApply={handleApplyFilters}
-            isLoading={loading}
-          />
-        </div>
-      </aside>
+      {/* Sidebar - Visível apenas nos Dashboards */}
+      {(currentView === 'calls' || currentView === 'mailing') && (
+        <aside className="w-80 p-4 fixed h-screen overflow-hidden hidden lg:block z-10 border-r border-slate-200 bg-white">
+            <div className="h-full flex flex-col">
+            <div className="flex items-center gap-3 px-2 mb-6 text-slate-900">
+                <div className="bg-primary-600 text-white p-2 rounded-lg">
+                    <LayoutDashboard size={24} />
+                </div>
+                <h1 className="text-xl font-bold tracking-tight">CallMetrics</h1>
+            </div>
+            
+            <Filters 
+                filters={filters} 
+                setFilters={setFilters} 
+                onApply={handleApplyFilters}
+                isLoading={loading}
+                pageSize={pageSize}
+                setPageSize={setPageSize}
+                currentView={currentView}
+            />
+            </div>
+        </aside>
+      )}
 
       {/* Main Content */}
-      <main className="flex-1 lg:ml-80 p-4 lg:p-8">
-        <header className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <main className={`flex-1 p-4 lg:p-8 transition-all duration-300 ${(currentView === 'calls' || currentView === 'mailing') ? 'lg:ml-80' : 'mx-auto container'}`}>
+        
+        {/* HEADER DE NAVEGAÇÃO */}
+        <header className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm sticky top-4 z-20">
           <div>
-            <h2 className="text-2xl font-bold text-slate-900">Dashboard</h2>
-            <p className="text-slate-500">Visão geral das chamadas e gravações do sistema.</p>
+            <h2 className="text-2xl font-bold text-slate-900">
+                {currentView === 'calls' && 'Dashboard de Ligações'}
+                {currentView === 'mailing' && 'Relatório de Importação'}
+                {currentView === 'upload' && 'Upload de Bases'}
+                {currentView === 'comparison' && 'Seleção de Bases'}
+            </h2>
+            <p className="text-slate-500 text-sm">
+                {currentView === 'calls' && 'Analise gravações, tempo falado e status das chamadas.'}
+                {currentView === 'mailing' && 'Verifique duplicidades e novos contatos inseridos.'}
+                {currentView === 'upload' && 'Importe novas planilhas para o sistema.'}
+                {currentView === 'comparison' && 'Selecione e compare bases de mailing.'}
+            </p>
           </div>
           
-          {/* Mobile Filter Toggle (Hidden on Desktop) */}
-          <button className="lg:hidden bg-white border border-slate-300 px-4 py-2 rounded-lg text-slate-700 font-medium shadow-sm">
-             Filtros
-          </button>
+          <div className="flex bg-slate-100 p-1 rounded-lg overflow-x-auto">
+              <button 
+                onClick={() => setCurrentView('calls')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all whitespace-nowrap ${
+                    currentView === 'calls' 
+                    ? 'bg-white text-primary-700 shadow-sm' 
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                  <Phone size={18} />
+                  Ligações
+              </button>
+              <button 
+                onClick={() => setCurrentView('mailing')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all whitespace-nowrap ${
+                    currentView === 'mailing' 
+                    ? 'bg-white text-indigo-700 shadow-sm' 
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                  <PieChartIcon size={18} />
+                  Mailing Stats
+              </button>
+              <button 
+                onClick={() => setCurrentView('upload')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all whitespace-nowrap ${
+                    currentView === 'upload' 
+                    ? 'bg-white text-green-700 shadow-sm' 
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                  <Upload size={18} />
+                  Upload
+              </button>
+              <button 
+                onClick={() => setCurrentView('comparison')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all whitespace-nowrap ${
+                    currentView === 'comparison' 
+                    ? 'bg-white text-purple-700 shadow-sm' 
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                  <GitCompare size={18} />
+                  Comparar Bases
+              </button>
+          </div>
         </header>
 
-        {/* KPI Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <StatsCard 
-            title="Total de Registros" 
-            value={stats.total.toLocaleString()} 
-            icon={Activity} 
-            color="blue" 
-          />
-          <StatsCard 
-            title="Taxa de Sucesso" 
-            value={`${stats.successRate}%`} 
-            icon={Percent} 
-            color="green" 
-            trend={stats.successRate > 50 ? "+2.5% vs ontem" : "-1.2% vs ontem"}
-          />
-          <StatsCard 
-            title="Duração Média" 
-            value={`${stats.avgDuration}s`} 
-            icon={Clock} 
-            color="orange" 
-          />
-          <StatsCard 
-            title="Chamadas Ativas" 
-            value={loading ? '-' : pagination?.porPagina || 0} 
-            icon={Phone} 
-            color="red" 
-          />
-        </div>
+        {/* --- VISÃO 1: DASHBOARD DE LIGAÇÕES --- */}
+        {currentView === 'calls' && (
+            <div className="animate-in fade-in duration-500 pb-20">
+                
+                <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                    <Activity className="w-5 h-5 text-primary-600" /> KPIs de Atendimento
+                </h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                    <StatsCard 
+                        title="Total Filtrado" 
+                        value={callStats.total.toLocaleString()} 
+                        icon={Activity} 
+                        color="blue" 
+                    />
+                    <StatsCard 
+                        title="Taxa de Atendimento" 
+                        value={`${callStats.successRate}%`} 
+                        icon={Percent} 
+                        color="green" 
+                        trend={callStats.successRate > 50 ? "Performance Positiva" : "Atenção Necessária"}
+                    />
+                    <StatsCard 
+                        title="Duração Média" 
+                        value={callStats.avgDuration} 
+                        icon={Clock} 
+                        color="orange" 
+                    />
+                    <StatsCard 
+                        title="Total na Tela" 
+                        value={tableData.length} 
+                        icon={Phone} 
+                        color="red" 
+                    />
+                </div>
 
-        {/* Charts Section */}
-        {!loading && data.length > 0 && (
-           <Charts data={data} />
+                {/* Gráficos Exclusivos de Ligações */}
+                {!loading && allData.length > 0 && (
+                    <Charts data={allData} />
+                )}
+
+                {/* Tabela de Gravações */}
+                <div id="recordings-table" className="flex items-center gap-2 mb-4 text-slate-800 pt-4 border-t border-slate-200">
+                    <BarChart3 className="w-5 h-5 text-primary-600" />
+                    <h3 className="font-semibold text-lg">Registros Detalhados</h3>
+                </div>
+                
+                <div className="min-h-[500px]">
+                    <RecordingsTable 
+                        data={tableData} 
+                        pagination={paginationMeta} 
+                        onPageChange={handlePageChange} 
+                        isLoading={loading}
+                    />
+                </div>
+            </div>
         )}
 
-        {/* Data Table Section */}
-        <div className="flex items-center gap-2 mb-4 text-slate-800">
-            <BarChart3 className="w-5 h-5 text-primary-600" />
-            <h3 className="font-semibold text-lg">Registros Detalhados</h3>
-        </div>
-        
-        <div className="h-[calc(100vh-500px)] min-h-[500px]">
-            <RecordingsTable 
-                data={data} 
-                pagination={pagination} 
-                onPageChange={handlePageChange} 
-                isLoading={loading}
-            />
-        </div>
+        {/* --- VISÃO 2: RELATÓRIO DE MAILING --- */}
+        {currentView === 'mailing' && (
+            <div className="animate-in fade-in duration-500 pb-20">
+                
+                <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                    <Database className="w-5 h-5 text-indigo-600" /> Performance de Importação
+                </h3>
+
+                {mailingGeneralStats ? (
+                    <>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                            <StatsCard 
+                                title="Total Inserido" 
+                                value={mailingGeneralStats.total_geral.toLocaleString()} 
+                                icon={FileText} 
+                                color="blue" 
+                            />
+                            <StatsCard 
+                                title="Contatos Únicos" 
+                                value={mailingGeneralStats.total_telefones_unicos.toLocaleString()} 
+                                icon={Users} 
+                                color="green" 
+                            />
+                            <StatsCard 
+                                title="Duplicados" 
+                                value={mailingGeneralStats.total_duplicados.toLocaleString()} 
+                                icon={Copy} 
+                                color="orange" 
+                            />
+                             <StatsCard 
+                                title="Taxa Duplicidade Global" 
+                                value={`${mailingGeneralStats.taxa_duplicacao_geral}%`} 
+                                icon={Percent} 
+                                color="red" 
+                            />
+                        </div>
+
+                        <div className="flex items-center gap-2 mb-4 text-slate-800 pt-4">
+                            <Database className="w-5 h-5 text-indigo-600" />
+                            <h3 className="font-semibold text-lg">Histórico de Bases Importadas</h3>
+                        </div>
+                        <div className="mb-8 min-h-[500px]">
+                            <MailingStatsTable data={mailingList} />
+                        </div>
+                    </>
+                ) : (
+                    <div className="p-12 text-center bg-white rounded-xl border border-slate-200">
+                        {loading ? <p>Carregando estatísticas...</p> : <p className="text-slate-500">Nenhum dado encontrado para os filtros selecionados.</p>}
+                    </div>
+                )}
+            </div>
+        )}
+
+        {/* --- VISÃO 3: UPLOAD --- */}
+        {currentView === 'upload' && (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <MailingUpload />
+            </div>
+        )}
+
+        {/* --- VISÃO 4: COMPARAÇÃO (NOVO) --- */}
+        {currentView === 'comparison' && (
+            <MailingComparison />
+        )}
 
       </main>
     </div>
